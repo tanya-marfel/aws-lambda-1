@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  aws-lambda
+
+  SAM Template for aws-lambda
+
+Globals:
+  Function:
+    Timeout: 20
+
+Resources:
+  S3ListBucketsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: S3ListBucketsFunction
+      Handler: com.epam.aws.lambda.App::handleRequest
+      Runtime: java11
+      MemorySize: 512
+      Events:
+        BucketList:
+          Type: Api
+          Properties:
+            Path: /buckets
+            Method: get
+      Policies:
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:ListAllMyBuckets
+              - s3:ListBucket
+            Resource: "*"
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Fn::ImportValue: BisonVpc
+      GroupDescription: Allows access over 443
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 50.7.142.180/0
+  ApiAccessEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId:
+        Fn::ImportValue: BisonVpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.execute-api"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: BisonPublicSubnetA
+        - Fn::ImportValue: BisonPublicSubnetB
+      SecurityGroupIds:
+        - !Ref ApiSecurityGroup
+
+  PrivateApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      MethodSettings:
+        - HttpMethod: GET
+          ResourcePath: /buckets
+      EndpointConfiguration: PRIVATE
+      DefinitionBody:
+        swagger: 2.0
+        info:
+          title: PrivateApi
+        basePath: /Prod
+        schemes:
+          - https
+        x-amazon-apigateway-policy:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal: "*"
+              Action:
+                - "execute-api:Invoke"
+              Resource: "execute-api:/*"
+              Condition:
+                StringEquals:
+                  aws:sourceVpce: !Ref ApiAccessEndpoint
+        paths:
+          /buckets:
+            x-amazon-apigateway-any-method:
+              produces:
+                - application/json
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: 200
+                uri: !Join [ "", [ !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:",
+                                   !Ref S3ListBucketsFunction, "/invocations" ] ]
+                passthroughBehavior: when_no_match
+                httpMethod: GET
+                type: AWS_PROXY
+
+Outputs:
+  S3ListBucketsApi:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/buckets/"
+  S3ListBucketsFunction:
+    Value: !GetAtt S3ListBucketsFunction.Arn
+  S3ListBucketsFunctionIamRole:
+    Value: !GetAtt S3ListBucketsFunctionRole.Arn
