@@ -9,14 +9,24 @@ Globals:
   Function:
     Timeout: 20
 
+Parameters:
+  Runtime:
+    Type: String
+    Default: java11
+    Description: Language runtime name to use for Lambda function execution
+  MemorySize:
+    Type: Number
+    Default: 512
+    Description: Memory capacity for Lambda function execution
+
 Resources:
   S3ListBucketsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: S3ListBucketsFunction
       Handler: com.epam.aws.lambda.App::handleRequest
-      Runtime: java11
-      MemorySize: 512
+      Runtime: !Ref Runtime
+      MemorySize: !Ref MemorySize
       Events:
         BucketList:
           Type: Api
